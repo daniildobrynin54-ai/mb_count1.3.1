@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "Mangabuff Card Stats",
+  "version": "1.3.1",
+  "description": "Показывает статистику карт на Mangabuff: количество владельцев и желающих. Умная оптимизация: приближённый подсчёт для популярных карт, точный для редких. Клик по бейджу = точное обновление.",
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "https://mangabuff.ru/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://mangabuff.ru/*"],
+      "js": ["content.js"],
+      "run_at": "document_end"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Mangabuff Card Stats"
+  },
+  "background": {
+    "service_worker": "background.js"
+  }
+}
