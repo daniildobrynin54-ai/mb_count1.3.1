@@ -1,21 +1,22 @@
-// Main content script - modular entry point
-import { Logger } from './modules/logger.js';
-import { NotificationManager } from './modules/notification.js';
-import { ExtensionState } from './modules/extension-state.js';
-import { RateLimitTracker } from './modules/rate-limit.js';
-import { Cache } from './modules/cache.js';
-import { DOMObserver } from './modules/dom-observer.js';
-import { MessageHandler } from './modules/message-handler.js';
-import { CardProcessor } from './modules/card-processor.js';
-
+// Main content script - dynamic module loading
 (async function() {
     'use strict';
 
     // Skip market/requests page
     if (location.pathname.includes('/market/requests')) {
-        Logger.important('⛔ Skipping market/requests page');
+        console.log('[MBUF] ⛔ Skipping market/requests page');
         return;
     }
+
+    // Динамический импорт модулей
+    const { Logger } = await import(chrome.runtime.getURL('modules/logger.js'));
+    const { NotificationManager } = await import(chrome.runtime.getURL('modules/notification.js'));
+    const { ExtensionState } = await import(chrome.runtime.getURL('modules/extension-state.js'));
+    const { RateLimitTracker } = await import(chrome.runtime.getURL('modules/rate-limit.js'));
+    const { Cache } = await import(chrome.runtime.getURL('modules/cache.js'));
+    const { DOMObserver } = await import(chrome.runtime.getURL('modules/dom-observer.js'));
+    const { MessageHandler } = await import(chrome.runtime.getURL('modules/message-handler.js'));
+    const { CardProcessor } = await import(chrome.runtime.getURL('modules/card-processor.js'));
 
     Logger.important('🚀 Mangabuff Card Stats v2.5 (Modular)');
     Logger.important('⚙️ Refactored into separate modules');
