@@ -13,6 +13,7 @@ export class CardProcessor {
     static currentBatchUrl = null;
     static cancelledBatch = false;
     static currentBatchProgress = { current: 0, total: 0 };
+    static marketCardIdCache = new Map();
 
     static async processAll() {
         if (!ExtensionState.isEnabled()) {
@@ -34,21 +35,46 @@ export class CardProcessor {
         const uniqueNodes = Array.from(new Set(nodes));
         Logger.important(`🔍 Found ${uniqueNodes.length} cards on ${this.currentBatchUrl}`);
 
-        const toFetch = [];
-        const toRefresh = [];
+        const toFetch = [];      // Новые карты (не в кэше)
+        const toRetry = [];      // Ошибки (приоритет)
+        const toRefresh = [];    // Устаревшие карты
 
         for (const cardElem of uniqueNodes) {
-            const cardId = Utils.getCardId(cardElem);
+            let cardId = Utils.getCardId(cardElem);
             if (!cardId) continue;
+
+            // Обработка маркет-лотов
+            if (cardId.startsWith('market:')) {
+                const lotId = cardId.replace('market:', '');
+                
+                if (this.marketCardIdCache.has(lotId)) {
+                    cardId = this.marketCardIdCache.get(lotId);
+                } else {
+                    const realCardId = await Utils.getMarketCardId(lotId);
+                    if (!realCardId) {
+                        Logger.warn(`Failed to get card ID for lot ${lotId}`);
+                        continue;
+                    }
+                    this.marketCardIdCache.set(lotId, realCardId);
+                    cardId = realCardId;
+                }
+            }
 
             const cached = Cache.get(cardId);
 
             if (cached) {
                 const isExpired = Cache.isExpired(cached);
+                const isError = Cache.hasError(cached);
                 const isManuallyUpdated = Cache.isRecentlyManuallyUpdated(cached);
+                
+                // Показываем кэшированные данные
                 StatsBadge.update(cardElem, cached.owners, cached.wants, isExpired, isManuallyUpdated);
 
-                if (isExpired) {
+                if (isError) {
+                    // Ошибки - высший приоритет
+                    toRetry.push({ elem: cardElem, id: cardId });
+                } else if (isExpired) {
+                    // Устаревшие - низкий приоритет
                     toRefresh.push({ elem: cardElem, id: cardId });
                     this.expiredCards.add(cardId);
                 }
@@ -56,22 +82,32 @@ export class CardProcessor {
                 cardElem.classList.add('mb_processed');
                 cardElem.setAttribute('data-mb-processed', 'true');
             } else {
+                // Нет в кэше - средний приоритет
                 if (!cardElem.classList.contains('mb_processed')) {
                     toFetch.push({ elem: cardElem, id: cardId });
                 }
             }
         }
 
-        if (toFetch.length > 0 || toRefresh.length > 0) {
-            Logger.important(`🎯 Priority: NEW cards: ${toFetch.length}, EXPIRED cards: ${toRefresh.length}`);
+        Logger.important(`🎯 Priority queue: ERRORS: ${toRetry.length}, NEW: ${toFetch.length}, EXPIRED: ${toRefresh.length}`);
+
+        // Обрабатываем в порядке приоритета
+        
+        // 1. Ошибки (высший приоритет)
+        if (toRetry.length > 0) {
+            Logger.important('🔴 Processing ERROR cards first (HIGHEST PRIORITY)...');
+            this.currentBatchProgress = { current: 0, total: toRetry.length };
+            await this.processBatch(toRetry, false, false);
         }
 
-        if (toFetch.length > 0) {
-            Logger.important('🔥 Processing NEW cards first...');
+        // 2. Новые карты
+        if (toFetch.length > 0 && !this.cancelledBatch) {
+            Logger.important('🔥 Processing NEW cards...');
             this.currentBatchProgress = { current: 0, total: toFetch.length };
             await this.processBatch(toFetch, false, false);
         }
 
+        // 3. Устаревшие карты (низший приоритет)
         if (toRefresh.length > 0 && !this.cancelledBatch) {
             Logger.important('🔄 Processing EXPIRED cards...');
             this.currentBatchProgress = { current: 0, total: toRefresh.length };
@@ -180,6 +216,23 @@ export class CardProcessor {
             return;
         }
 
+        // Обработка маркет-лотов при ручном обновлении
+        if (cardId.startsWith('market:')) {
+            const lotId = cardId.replace('market:', '');
+            
+            if (this.marketCardIdCache.has(lotId)) {
+                cardId = this.marketCardIdCache.get(lotId);
+            } else {
+                const realCardId = await Utils.getMarketCardId(lotId);
+                if (!realCardId) {
+                    Logger.warn(`Failed to get card ID for lot ${lotId}`);
+                    return;
+                }
+                this.marketCardIdCache.set(lotId, realCardId);
+                cardId = realCardId;
+            }
+        }
+
         Logger.important(`🎯 Manual update (PRIORITY - IGNORING RATE LIMIT): Card ${cardId}`);
 
         const badge = cardElem.querySelector('.mbuf_card_overlay');
@@ -219,8 +272,18 @@ export class CardProcessor {
         for (const cardElem of nodes) {
             if (cardElem.classList.contains('mb_processed')) continue;
 
-            const cardId = Utils.getCardId(cardElem);
+            let cardId = Utils.getCardId(cardElem);
             if (!cardId) continue;
+
+            // Обработка маркет-лотов
+            if (cardId.startsWith('market:')) {
+                const lotId = cardId.replace('market:', '');
+                if (this.marketCardIdCache.has(lotId)) {
+                    cardId = this.marketCardIdCache.get(lotId);
+                } else {
+                    continue;
+                }
+            }
 
             const cached = Cache.get(cardId);
             if (cached) {

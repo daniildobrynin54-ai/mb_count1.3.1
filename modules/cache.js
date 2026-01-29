@@ -62,24 +62,39 @@ export class Cache {
     }
 
     static ttlForOwners(owners) {
-        if (owners === -1) return 1 * 60 * 1000;
-        if (owners <= 60) return 1 * 60 * 60 * 1000;
-        if (owners <= 240) return 12 * 60 * 60 * 1000;
-        if (owners <= 600) return 48 * 60 * 60 * 1000;
-        if (owners <= 1200) return 96 * 60 * 60 * 1000;
-        return 240 * 60 * 60 * 1000;
+        // Ошибки не кэшируются - считаются неспрошенными
+        if (owners === -1) return 0;
+        
+        if (owners <= 60) return 2 * 60 * 60 * 1000;      // ≤ 60: 2 часа
+        if (owners <= 110) return 6 * 60 * 60 * 1000;     // 61-110: 6 часов
+        if (owners <= 240) return 24 * 60 * 60 * 1000;    // 111-240: 24 часа
+        if (owners <= 600) return 96 * 60 * 60 * 1000;    // 241-600: 4 дня
+        if (owners <= 1200) return 192 * 60 * 60 * 1000;  // 601-1200: 8 дней
+        return 336 * 60 * 60 * 1000;                       // > 1200: 14 дней
     }
 
     static isValid(entry) {
         if (!entry || typeof entry.ts !== 'number') return false;
+        
+        // Ошибки всегда невалидны - будут пересчитаны как новые карты
+        if (entry.owners === -1) return false;
+        
         const ttl = this.ttlForOwners(entry.owners ?? -1);
         return (Utils.now() - entry.ts) < ttl;
     }
 
     static isExpired(entry) {
         if (!entry || typeof entry.ts !== 'number') return true;
+        
+        // Ошибки всегда expired
+        if (entry.owners === -1) return true;
+        
         const ttl = this.ttlForOwners(entry.owners ?? -1);
         return (Utils.now() - entry.ts) >= ttl;
+    }
+
+    static hasError(entry) {
+        return entry && entry.owners === -1;
     }
 
     static isRecentlyManuallyUpdated(entry) {
@@ -115,9 +130,11 @@ export class Cache {
     }
 
     static async getStats() {
+        const entries = Object.values(this.data);
         return {
             total: Object.keys(this.data).length,
-            expired: Object.values(this.data).filter(e => this.isExpired(e)).length
+            expired: entries.filter(e => this.isExpired(e)).length,
+            errors: entries.filter(e => this.hasError(e)).length
         };
     }
 }
