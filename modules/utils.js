@@ -19,13 +19,18 @@ export const Utils = {
             const html = await response.text();
             const doc = new DOMParser().parseFromString(html, 'text/html');
             
-            // Ищем ссылку на карту: href="/cards/328881/users"
-            const cardLink = doc.querySelector('a[href*="/cards/"][href*="/users"]');
-            if (cardLink) {
-                const match = cardLink.href.match(/\/cards\/(\d+)\/users/);
-                if (match) {
-                    console.log(`[MBUF] Lot ${lotId} -> Card ${match[1]}`);
-                    return match[1];
+            // Ищем ссылку на карту внутри card-show__wrapper
+            // Для обычных карт: <a href="/cards/328881/users" class="card-show__placeholder">
+            // Для анимированных: <a href="/cards/328881/users"> (без класса placeholder)
+            const wrapper = doc.querySelector('.card-show__wrapper');
+            if (wrapper) {
+                const cardLink = wrapper.querySelector('a[href*="/cards/"][href*="/users"]');
+                if (cardLink) {
+                    const match = cardLink.href.match(/\/cards\/(\d+)\/users/);
+                    if (match) {
+                        console.log(`[MBUF] Lot ${lotId} -> Card ${match[1]}`);
+                        return match[1];
+                    }
                 }
             }
             
@@ -37,8 +42,66 @@ export const Utils = {
         }
     },
 
+    // Получить ID карты из заявки (request)
+    async getRequestCardId(requestId) {
+        try {
+            const response = await fetch(`https://mangabuff.ru/market/requests/${requestId}`, {
+                credentials: 'include',
+                headers: {
+                    'Accept': 'text/html',
+                    'User-Agent': navigator.userAgent
+                }
+            });
+            
+            if (!response.ok) {
+                console.error(`[MBUF] Failed to fetch request ${requestId}: ${response.status}`);
+                return null;
+            }
+            
+            const html = await response.text();
+            const doc = new DOMParser().parseFromString(html, 'text/html');
+            
+            // Ищем ссылку на карту внутри card-show__wrapper
+            // Для обычных карт: <a href="/cards/308155/users" class="card-show__placeholder">
+            // Для анимированных: <a href="/cards/249503/users"> (без класса placeholder)
+            const wrapper = doc.querySelector('.card-show__wrapper');
+            if (wrapper) {
+                const cardLink = wrapper.querySelector('a[href*="/cards/"][href*="/users"]');
+                if (cardLink) {
+                    const match = cardLink.href.match(/\/cards\/(\d+)\/users/);
+                    if (match) {
+                        console.log(`[MBUF] Request ${requestId} -> Card ${match[1]}`);
+                        return match[1];
+                    }
+                }
+            }
+            
+            console.error(`[MBUF] Card ID not found in request ${requestId}`);
+            return null;
+        } catch (error) {
+            console.error(`[MBUF] Error fetching request ${requestId}:`, error);
+            return null;
+        }
+    },
+
     getCardId(cardElem) {
         if (!cardElem) return null;
+
+        // Специальная обработка для заявок на странице /market/requests
+        if (location.pathname === '/market/requests' || location.pathname.startsWith('/market/requests')) {
+            const requestsContainer = cardElem.closest('.market-list__cards--requests');
+            
+            if (requestsContainer) {
+                const wrapper = cardElem.closest('.manga-cards__item-wrapper');
+                if (wrapper) {
+                    const requestId = wrapper.getAttribute('data-id');
+                    if (requestId) {
+                        console.log(`[MBUF] Detected request: ${requestId}`);
+                        return `request:${requestId}`;
+                    }
+                }
+            }
+        }
 
         // Специальная обработка для личных лотов на маркете
         if (location.pathname === '/market') {

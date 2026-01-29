@@ -8,17 +8,10 @@ export class DOMObserver {
     static debounceTimer = null;
 
     static init() {
-        if (location.pathname.includes('/market/requests')) {
-            Logger.important('⛔ Skipping DOM observer on market/requests');
-            return;
-        }
-
         CardProcessor.processAll();
 
         const observer = new MutationObserver((mutations) => {
             if (!ExtensionState.isEnabled()) return;
-            
-            if (location.pathname.includes('/market/requests')) return;
 
             let foundNew = false;
 

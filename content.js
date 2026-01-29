@@ -2,12 +2,6 @@
 (async function() {
     'use strict';
 
-    // Skip market/requests page
-    if (location.pathname.includes('/market/requests')) {
-        console.log('[MBUF] ⛔ Skipping market/requests page');
-        return;
-    }
-
     // Динамический импорт модулей
     const { Logger } = await import(chrome.runtime.getURL('modules/logger.js'));
     const { NotificationManager } = await import(chrome.runtime.getURL('modules/notification.js'));
@@ -47,12 +41,6 @@
         if (location.href !== lastUrl) {
             lastUrl = location.href;
             Logger.important('🔄 Page changed to: ' + lastUrl);
-            
-            if (location.pathname.includes('/market/requests')) {
-                Logger.important('⛔ Market requests page - stopping all processing');
-                CardProcessor.cancelCurrentBatch();
-                return;
-            }
             
             CardProcessor.cancelCurrentBatch();
             

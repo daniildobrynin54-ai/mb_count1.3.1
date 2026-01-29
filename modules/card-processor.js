@@ -60,6 +60,23 @@ export class CardProcessor {
                 }
             }
 
+            // Обработка заявок (requests)
+            if (cardId.startsWith('request:')) {
+                const requestId = cardId.replace('request:', '');
+                
+                if (this.marketCardIdCache.has(requestId)) {
+                    cardId = this.marketCardIdCache.get(requestId);
+                } else {
+                    const realCardId = await Utils.getRequestCardId(requestId);
+                    if (!realCardId) {
+                        Logger.warn(`Failed to get card ID for request ${requestId}`);
+                        continue;
+                    }
+                    this.marketCardIdCache.set(requestId, realCardId);
+                    cardId = realCardId;
+                }
+            }
+
             const cached = Cache.get(cardId);
 
             if (cached) {
@@ -233,6 +250,23 @@ export class CardProcessor {
             }
         }
 
+        // Обработка заявок (requests) при ручном обновлении
+        if (cardId.startsWith('request:')) {
+            const requestId = cardId.replace('request:', '');
+            
+            if (this.marketCardIdCache.has(requestId)) {
+                cardId = this.marketCardIdCache.get(requestId);
+            } else {
+                const realCardId = await Utils.getRequestCardId(requestId);
+                if (!realCardId) {
+                    Logger.warn(`Failed to get card ID for request ${requestId}`);
+                    return;
+                }
+                this.marketCardIdCache.set(requestId, realCardId);
+                cardId = realCardId;
+            }
+        }
+
         Logger.important(`🎯 Manual update (PRIORITY - IGNORING RATE LIMIT): Card ${cardId}`);
 
         const badge = cardElem.querySelector('.mbuf_card_overlay');
@@ -280,6 +314,16 @@ export class CardProcessor {
                 const lotId = cardId.replace('market:', '');
                 if (this.marketCardIdCache.has(lotId)) {
                     cardId = this.marketCardIdCache.get(lotId);
+                } else {
+                    continue;
+                }
+            }
+
+            // Обработка заявок (requests)
+            if (cardId.startsWith('request:')) {
+                const requestId = cardId.replace('request:', '');
+                if (this.marketCardIdCache.has(requestId)) {
+                    cardId = this.marketCardIdCache.get(requestId);
                 } else {
                     continue;
                 }
