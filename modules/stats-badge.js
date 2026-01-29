@@ -21,7 +21,7 @@ export class StatsBadge {
         Object.assign(badge.style, {
             position: 'absolute',
             right: isTradeCard ? '4px' : '6px',
-            top: isTradeCard ? '4px' : '6px',
+            top: isTradeCard ? '36px' : '38px', // Смещение вниз на 32 пикселя (было 4px и 6px)
             zIndex: '10',
             background: 'rgba(0,0,0,0.85)',
             color: '#fff',

@@ -52,7 +52,7 @@ export const CONFIG = {
     MAX_REQUESTS_PER_MINUTE: 70,
     RATE_LIMIT_WINDOW: 60000, // 1 minute
     MANUAL_UPDATE_COOLDOWN: 3600000, // 1 hour
-    MAX_CACHE_ENTRIES: 10000, // Limit cache size
+    MAX_CACHE_ENTRIES: 500000, // Limit cache size
 
     // Storage keys
     CACHE_KEY: 'mbuf_cache_v3',
