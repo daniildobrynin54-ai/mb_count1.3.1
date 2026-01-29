@@ -1,8 +1,8 @@
-// Main content script - dynamic module loading
+// Main content script - Optimized v3.0
 (async function() {
     'use strict';
 
-    // Динамический импорт модулей
+    // Dynamic module imports
     const { Logger } = await import(chrome.runtime.getURL('modules/logger.js'));
     const { NotificationManager } = await import(chrome.runtime.getURL('modules/notification.js'));
     const { ExtensionState } = await import(chrome.runtime.getURL('modules/extension-state.js'));
@@ -13,27 +13,29 @@
     const { MessageHandler } = await import(chrome.runtime.getURL('modules/message-handler.js'));
     const { CardProcessor } = await import(chrome.runtime.getURL('modules/card-processor.js'));
 
-    Logger.important('🚀 Mangabuff Card Stats v2.5 (Modular + Page Filters)');
-    Logger.important('⚙️ Refactored into separate modules with page filtering');
+    Logger.important('🚀 Mangabuff Card Stats v3.0 (Optimized)');
+    Logger.important('⚡ Refactored with improved performance and memory management');
 
     // Initialize notification styles
     NotificationManager.initStyles();
 
-    // Load extension state, page filters and cache
+    // Load extension state, page filters, rate limit, and cache
     await ExtensionState.load();
     await PageFilter.load();
     await RateLimitTracker.init();
     await Cache.load();
 
-    Logger.important(`💾 Cache: ${Object.keys(Cache.data).length} cards in chrome.storage.local`);
-    Logger.important(`🔧 Page filters: ${PageFilter.getCurrentPageType()} - ${PageFilter.isCurrentPageEnabled() ? 'ENABLED' : 'DISABLED'}`);
+    Logger.important(`💾 Cache: ${Cache.data.size} cards loaded`);
+    Logger.important(`🎯 Page: ${PageFilter.getCurrentPageType()} - ${PageFilter.isCurrentPageEnabled() ? 'ENABLED' : 'DISABLED'}`);
 
     // Initialize message handler
     MessageHandler.init();
 
-    // Initialize DOM observer
+    // Initialize DOM observer when ready
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', () => DOMObserver.init());
+        document.addEventListener('DOMContentLoaded', () => {
+            DOMObserver.init();
+        });
     } else {
         DOMObserver.init();
     }
@@ -45,14 +47,18 @@
             lastUrl = location.href;
             Logger.important('🔄 Page changed to: ' + lastUrl);
             
+            // Cancel current batch
             CardProcessor.cancelCurrentBatch();
             
-            document.querySelectorAll('.mb_processed').forEach(el => {
-                el.classList.remove('mb_processed');
-                el.removeAttribute('data-mb-processed');
-            });
+            // Clear processed marks
+            CardProcessor.clearProcessedMarks();
             
-            setTimeout(() => CardProcessor.processAll(), 500);
+            // Process new page after short delay
+            setTimeout(() => {
+                if (ExtensionState.isEnabled() && PageFilter.isCurrentPageEnabled()) {
+                    CardProcessor.processAll();
+                }
+            }, 500);
         }
     };
 
@@ -60,23 +66,35 @@
     
     // Rate limit logging
     setInterval(() => {
-        const stats = RateLimitTracker.getStats();
-        Logger.important(`🛡️ Rate Limit: ${stats.current}/${stats.max}`);
-    }, 5000);
+        if (ExtensionState.isEnabled()) {
+            const stats = RateLimitTracker.getStats();
+            Logger.debug(`🛡️ Rate Limit: ${stats.current}/${stats.max} (${stats.remaining} remaining)`);
+        }
+    }, 10000); // Log every 10 seconds instead of 5
 
     // Auto-refresh for pack opening pages
     if (location.pathname.includes('/cards/pack')) {
-        Logger.important('🎴 Pack opening page detected - enabling auto-refresh');
+        Logger.important('🎴 Pack opening page - enabling auto-refresh');
+        
         setInterval(() => {
             if (!ExtensionState.isEnabled()) return;
             if (!PageFilter.isCurrentPageEnabled()) return;
             
-            document.querySelectorAll('.mb_processed').forEach(el => {
-                el.classList.remove('mb_processed');
-                el.removeAttribute('data-mb-processed');
-            });
+            // Quick refresh from cache
+            CardProcessor.quickRefresh();
             
+            // Full processing for new cards
             CardProcessor.processAll();
         }, 2000);
     }
+
+    // Memory management - periodic cleanup
+    setInterval(async () => {
+        if (Cache.data.size > 8000) {
+            Logger.important('🧹 Cache cleanup triggered');
+            await Cache.pruneToMaxSize(7000);
+        }
+    }, 300000); // Every 5 minutes
+
+    Logger.important('✅ Extension fully initialized');
 })();

@@ -1,5 +1,5 @@
-// UI Badge for cards
-import { Utils } from './utils.js';
+// UI Badge for cards with correct imports
+import { DOMUtils } from './utils.js';
 
 export class StatsBadge {
     static update(cardElem, owners, wants, isExpired = false, isManuallyUpdated = false) {
@@ -41,11 +41,16 @@ export class StatsBadge {
         badge.addEventListener('click', async (e) => {
             e.preventDefault();
             e.stopPropagation();
-            const cardId = Utils.getCardId(cardElem);
+            
+            // ✅ Используем DOMUtils вместо Utils
+            const cardId = DOMUtils.getCardId(cardElem);
             if (cardId) {
-                // CardProcessor будет импортирован динамически
-                const { CardProcessor } = await import('./card-processor.js');
-                await CardProcessor.priorityUpdateCard(cardElem, cardId);
+                try {
+                    const { CardProcessor } = await import('./card-processor.js');
+                    await CardProcessor.priorityUpdateCard(cardElem, cardId);
+                } catch (error) {
+                    console.error('[MBUF] Error updating card:', error);
+                }
             }
         });
 
@@ -59,6 +64,7 @@ export class StatsBadge {
     static render(badge, owners, wants, isExpired = false, isManuallyUpdated = false) {
         if (!badge) return;
 
+        // Styling based on state
         if (owners === '⌛' && isManuallyUpdated) {
             badge.style.background = 'linear-gradient(135deg, rgba(255,215,0,0.95), rgba(255,165,0,0.95))';
             badge.style.border = '2px solid rgba(255,223,0,0.8)';
@@ -88,11 +94,11 @@ export class StatsBadge {
         
         const ownersTooltip = isManuallyUpdated 
             ? `Владельцев: ${owners === -1 ? 'ошибка' : owners} (ТОЧНОЕ, обновлено вручную)`
-            : `Владельцев: ${owners === -1 ? 'ошибка' : owners}${isExpired ? ' (устарело)' : ''} - Клик для ТОЧНОГО обновления (игнорирует rate limit)`;
+            : `Владельцев: ${owners === -1 ? 'ошибка' : owners}${isExpired ? ' (устарело)' : ''} - Клик для ТОЧНОГО обновления`;
         
         const wantsTooltip = isManuallyUpdated
             ? `Желающих: ${wants === -1 ? 'ошибка' : wants} (ТОЧНОЕ, обновлено вручную)`
-            : `Желающих: ${wants === -1 ? 'ошибка' : wants}${isExpired ? ' (устарело)' : ''} - Клик для ТОЧНОГО обновления (игнорирует rate limit)`;
+            : `Желающих: ${wants === -1 ? 'ошибка' : wants}${isExpired ? ' (устарело)' : ''} - Клик для ТОЧНОГО обновления`;
 
         badge.innerHTML = `
             <span title="${ownersTooltip}">

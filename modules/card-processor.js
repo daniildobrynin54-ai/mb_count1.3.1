@@ -1,352 +1,438 @@
-// Card Processor - Main processing logic
+// Optimized Card Processor with improved batch processing and priority queue
 import { CONFIG } from './config.js';
 import { Logger } from './logger.js';
-import { Utils } from './utils.js';
+import { Utils, DOMUtils, CardIdResolver_Instance } from './utils.js';
 import { Cache } from './cache.js';
 import { StatsBadge } from './stats-badge.js';
 import { OwnersCounter, WantsCounter } from './counters.js';
 import { ExtensionState } from './extension-state.js';
 import { PageFilter } from './page-filter.js';
 
-export class CardProcessor {
-    static expiredCards = new Set();
-    static processedInSession = new Set();
-    static currentBatchUrl = null;
-    static cancelledBatch = false;
-    static currentBatchProgress = { current: 0, total: 0 };
-    static marketCardIdCache = new Map();
+/**
+ * Priority levels for card processing
+ */
+const PRIORITY = {
+    ERROR: 3,      // Highest - cards with errors
+    NEW: 2,        // Medium - new cards not in cache
+    EXPIRED: 1     // Lowest - expired cards
+};
 
+/**
+ * Card item for processing queue
+ */
+class CardItem {
+    constructor(element, cardId, priority = PRIORITY.NEW) {
+        this.element = element;
+        this.cardId = cardId;
+        this.priority = priority;
+        this.timestamp = Date.now();
+    }
+}
+
+/**
+ * Batch processor with cancellation support
+ */
+class BatchProcessor {
+    constructor() {
+        this.currentBatchUrl = null;
+        this.cancelled = false;
+        this.abortController = null;
+        this.progress = { current: 0, total: 0 };
+    }
+
+    start(url) {
+        this.currentBatchUrl = url;
+        this.cancelled = false;
+        this.abortController = new AbortController();
+        this.progress = { current: 0, total: 0 };
+    }
+
+    cancel() {
+        this.cancelled = true;
+        if (this.abortController) {
+            this.abortController.abort();
+        }
+        Logger.important('❌ Batch processing cancelled');
+    }
+
+    isCancelled() {
+        return this.cancelled || location.href !== this.currentBatchUrl;
+    }
+
+    updateProgress(current, total) {
+        this.progress = { current, total };
+    }
+
+    getProgress() {
+        return { ...this.progress };
+    }
+}
+
+export class CardProcessor {
+    static batchProcessor = new BatchProcessor();
+    static processedInSession = new Set();
+    static processingQueue = [];
+    static isProcessing = false;
+
+    /**
+     * Main processing entry point
+     */
     static async processAll() {
         if (!ExtensionState.isEnabled()) {
-            Logger.info('Extension is disabled, skipping processing');
+            Logger.info('Extension disabled, skipping');
             return;
         }
 
-        // Проверяем, включена ли текущая страница
         if (!PageFilter.isCurrentPageEnabled()) {
-            Logger.important(`⛔ Current page type (${PageFilter.getCurrentPageType()}) is disabled in filters`);
+            Logger.important(`⛔ Page type disabled: ${PageFilter.getCurrentPageType()}`);
             return;
         }
 
-        this.currentBatchUrl = location.href;
-        this.cancelledBatch = false;
+        // Start new batch
+        this.batchProcessor.start(location.href);
 
-        const nodes = CONFIG.CARD_SELECTORS.flatMap(sel => {
-            try {
-                return Array.from(document.querySelectorAll(sel));
-            } catch (e) {
-                return [];
-            }
-        });
+        // Find all cards
+        const cards = DOMUtils.queryAllCards();
+        Logger.important(`🔍 Found ${cards.length} cards`);
 
-        const uniqueNodes = Array.from(new Set(nodes));
-        Logger.important(`🔍 Found ${uniqueNodes.length} cards on ${this.currentBatchUrl}`);
+        if (cards.length === 0) return;
 
-        const toFetch = [];      // Новые карты (не в кэше)
-        const toRetry = [];      // Ошибки (приоритет)
-        const toRefresh = [];    // Устаревшие карты
+        // Categorize cards by priority
+        const queues = {
+            [PRIORITY.ERROR]: [],
+            [PRIORITY.NEW]: [],
+            [PRIORITY.EXPIRED]: []
+        };
 
-        for (const cardElem of uniqueNodes) {
-            let cardId = Utils.getCardId(cardElem);
-            if (!cardId) continue;
-
-            // Обработка маркет-лотов
-            if (cardId.startsWith('market:')) {
-                const lotId = cardId.replace('market:', '');
-                
-                if (this.marketCardIdCache.has(lotId)) {
-                    cardId = this.marketCardIdCache.get(lotId);
-                } else {
-                    const realCardId = await Utils.getMarketCardId(lotId);
-                    if (!realCardId) {
-                        Logger.warn(`Failed to get card ID for lot ${lotId}`);
-                        continue;
-                    }
-                    this.marketCardIdCache.set(lotId, realCardId);
-                    cardId = realCardId;
-                }
-            }
-
-            // Обработка заявок (requests)
-            if (cardId.startsWith('request:')) {
-                const requestId = cardId.replace('request:', '');
-                
-                if (this.marketCardIdCache.has(requestId)) {
-                    cardId = this.marketCardIdCache.get(requestId);
-                } else {
-                    const realCardId = await Utils.getRequestCardId(requestId);
-                    if (!realCardId) {
-                        Logger.warn(`Failed to get card ID for request ${requestId}`);
-                        continue;
-                    }
-                    this.marketCardIdCache.set(requestId, realCardId);
-                    cardId = realCardId;
-                }
-            }
-
-            const cached = Cache.get(cardId);
-
-            if (cached) {
-                const isExpired = Cache.isExpired(cached);
-                const isError = Cache.hasError(cached);
-                const isManuallyUpdated = Cache.isRecentlyManuallyUpdated(cached);
-                
-                // Показываем кэшированные данные
-                StatsBadge.update(cardElem, cached.owners, cached.wants, isExpired, isManuallyUpdated);
-
-                if (isError) {
-                    // Ошибки - высший приоритет
-                    toRetry.push({ elem: cardElem, id: cardId });
-                } else if (isExpired) {
-                    // Устаревшие - низкий приоритет
-                    toRefresh.push({ elem: cardElem, id: cardId });
-                    this.expiredCards.add(cardId);
-                }
-
-                cardElem.classList.add('mb_processed');
-                cardElem.setAttribute('data-mb-processed', 'true');
-            } else {
-                // Нет в кэше - средний приоритет
-                if (!cardElem.classList.contains('mb_processed')) {
-                    toFetch.push({ elem: cardElem, id: cardId });
-                }
+        // Process each card and categorize
+        for (const cardElem of cards) {
+            const result = await this._categorizeCard(cardElem);
+            if (result) {
+                queues[result.priority].push(result.item);
             }
         }
 
-        Logger.important(`🎯 Priority queue: ERRORS: ${toRetry.length}, NEW: ${toFetch.length}, EXPIRED: ${toRefresh.length}`);
+        // Log queue sizes
+        Logger.important(
+            `🎯 Queues - ERRORS: ${queues[PRIORITY.ERROR].length}, ` +
+            `NEW: ${queues[PRIORITY.NEW].length}, ` +
+            `EXPIRED: ${queues[PRIORITY.EXPIRED].length}`
+        );
 
-        // Обрабатываем в порядке приоритета
-        
-        // 1. Ошибки (высший приоритет)
-        if (toRetry.length > 0) {
-            Logger.important('🔴 Processing ERROR cards first (HIGHEST PRIORITY)...');
-            this.currentBatchProgress = { current: 0, total: toRetry.length };
-            await this.processBatch(toRetry, false, false);
+        // Process in priority order
+        for (const priority of [PRIORITY.ERROR, PRIORITY.NEW, PRIORITY.EXPIRED]) {
+            const queue = queues[priority];
+            if (queue.length > 0 && !this.batchProcessor.isCancelled()) {
+                const label = priority === PRIORITY.ERROR ? 'ERROR' :
+                             priority === PRIORITY.NEW ? 'NEW' : 'EXPIRED';
+                Logger.important(`🔥 Processing ${label} cards...`);
+                await this._processBatch(queue, priority);
+            }
         }
 
-        // 2. Новые карты
-        if (toFetch.length > 0 && !this.cancelledBatch) {
-            Logger.important('🔥 Processing NEW cards...');
-            this.currentBatchProgress = { current: 0, total: toFetch.length };
-            await this.processBatch(toFetch, false, false);
-        }
-
-        // 3. Устаревшие карты (низший приоритет)
-        if (toRefresh.length > 0 && !this.cancelledBatch) {
-            Logger.important('🔄 Processing EXPIRED cards...');
-            this.currentBatchProgress = { current: 0, total: toRefresh.length };
-            await this.processBatch(toRefresh, true, false);
-        }
-
-        this.currentBatchProgress = { current: 0, total: 0 };
+        this.batchProcessor.updateProgress(0, 0);
     }
 
-    static cancelCurrentBatch() {
-        Logger.important('❌ Cancelling current batch');
-        this.cancelledBatch = true;
+    /**
+     * Categorize single card
+     */
+    static async _categorizeCard(cardElem) {
+        let cardId = DOMUtils.getCardId(cardElem);
+        if (!cardId) return null;
+
+        // Resolve special card IDs (market/request)
+        cardId = await CardIdResolver_Instance.resolve(cardId);
+        if (!cardId) return null;
+
+        const cached = Cache.get(cardId);
+
+        if (cached) {
+            const isError = Cache.hasError(cached);
+            const isExpired = Cache.isExpired(cached);
+            const isManuallyUpdated = Cache.isRecentlyManuallyUpdated(cached);
+
+            // Show cached data immediately
+            StatsBadge.update(
+                cardElem,
+                cached.owners,
+                cached.wants,
+                isExpired,
+                isManuallyUpdated
+            );
+
+            cardElem.classList.add('mb_processed');
+            cardElem.setAttribute('data-mb-processed', 'true');
+
+            // Determine priority
+            if (isError) {
+                return {
+                    item: new CardItem(cardElem, cardId, PRIORITY.ERROR),
+                    priority: PRIORITY.ERROR
+                };
+            } else if (isExpired) {
+                return {
+                    item: new CardItem(cardElem, cardId, PRIORITY.EXPIRED),
+                    priority: PRIORITY.EXPIRED
+                };
+            }
+
+            return null; // Valid cached data, no need to process
+        }
+
+        // Not in cache - mark for processing
+        if (!cardElem.classList.contains('mb_processed')) {
+            return {
+                item: new CardItem(cardElem, cardId, PRIORITY.NEW),
+                priority: PRIORITY.NEW
+            };
+        }
+
+        return null;
     }
 
-    static async processBatch(items, isRefresh = false, forceAccurate = false) {
+    /**
+     * Process batch of cards
+     */
+    static async _processBatch(items, priority) {
         const batchSize = CONFIG.BATCH_SIZE;
-        const batchUrl = this.currentBatchUrl;
+        const isRefresh = priority === PRIORITY.EXPIRED;
+
+        this.batchProcessor.updateProgress(0, items.length);
 
         for (let i = 0; i < items.length; i += batchSize) {
-            if (location.href !== batchUrl || this.cancelledBatch) {
-                Logger.important(`⚠️ URL changed or batch cancelled, stopping batch processing`);
+            if (this.batchProcessor.isCancelled()) {
+                Logger.important('⚠️ Batch cancelled');
                 return;
             }
 
             const batch = items.slice(i, i + batchSize);
-            Logger.info(`Processing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(items.length / batchSize)}`);
+            const batchNum = Math.floor(i / batchSize) + 1;
+            const totalBatches = Math.ceil(items.length / batchSize);
 
-            await Promise.all(batch.map((item, idx) => {
-                if (!document.body.contains(item.elem)) {
-                    Logger.info(`Card ${item.id} removed from DOM, skipping`);
-                    return Promise.resolve();
-                }
-                this.currentBatchProgress.current = i + idx + 1;
-                return this.processCard(item.elem, item.id, isRefresh, forceAccurate);
-            }));
+            Logger.info(`Processing batch ${batchNum}/${totalBatches}`);
 
+            // Process batch in parallel
+            await Promise.all(
+                batch.map((item, idx) => {
+                    // Check if element still in DOM
+                    if (!document.body.contains(item.element)) {
+                        Logger.info(`Card ${item.cardId} removed from DOM`);
+                        return Promise.resolve();
+                    }
+
+                    this.batchProcessor.updateProgress(i + idx + 1, items.length);
+                    return this._processCard(item.element, item.cardId, isRefresh, false);
+                })
+            );
+
+            // Pause between batches
             if (i + batchSize < items.length) {
-                await Utils.sleep(CONFIG.PAUSE_BETWEEN_REQUESTS);
+                await Utils.sleep(
+                    CONFIG.PAUSE_BETWEEN_REQUESTS,
+                    this.batchProcessor.abortController?.signal
+                ).catch(() => {});
             }
         }
     }
 
-    static async processCard(cardElem, cardId, isRefresh = false, forceAccurate = false) {
+    /**
+     * Process single card
+     */
+    static async _processCard(cardElem, cardId, isRefresh = false, forceAccurate = false) {
         if (!cardElem || !cardId) return;
 
+        // Check if still in DOM
         if (!document.body.contains(cardElem)) {
-            Logger.info(`Card ${cardId} not in DOM, skipping`);
+            Logger.info(`Card ${cardId} not in DOM`);
             return;
         }
 
+        // Check if already being fetched
         if (Cache.pendingFetches.has(cardId)) {
-            const result = await Cache.pendingFetches.get(cardId);
-            const cached = Cache.get(cardId);
-            const isManuallyUpdated = cached ? Cache.isRecentlyManuallyUpdated(cached) : false;
-            StatsBadge.update(cardElem, result.owners, result.wants, false, isManuallyUpdated);
+            try {
+                const result = await Cache.pendingFetches.get(cardId);
+                const cached = Cache.get(cardId);
+                const isManuallyUpdated = cached ? Cache.isRecentlyManuallyUpdated(cached) : false;
+                StatsBadge.update(cardElem, result.owners, result.wants, false, isManuallyUpdated);
+            } catch (error) {
+                Logger.error(`Error waiting for pending fetch ${cardId}:`, error);
+            }
             return;
         }
 
+        // Mark as processed
         cardElem.classList.add('mb_processed');
         cardElem.setAttribute('data-mb-processed', 'true');
 
+        // Show loading state for new cards
         if (!isRefresh) {
             StatsBadge.update(cardElem, '⌛', '⌛');
         }
 
         try {
+            // Create fetch promise
             const fetchPromise = Promise.all([
                 OwnersCounter.count(cardId, forceAccurate, false),
                 WantsCounter.count(cardId, forceAccurate, false)
             ]).then(([owners, wants]) => {
                 Cache.set(cardId, owners, wants, forceAccurate);
-                this.expiredCards.delete(cardId);
                 return { owners, wants };
             });
 
+            // Store pending fetch
             Cache.pendingFetches.set(cardId, fetchPromise);
+
+            // Wait for result
             const { owners, wants } = await fetchPromise;
 
+            // Check if still in DOM
             if (!document.body.contains(cardElem)) {
-                Logger.info(`Card ${cardId} removed from DOM during processing`);
+                Logger.info(`Card ${cardId} removed during processing`);
                 return;
             }
 
+            // Update badge
             const cached = Cache.get(cardId);
             const isManuallyUpdated = cached ? Cache.isRecentlyManuallyUpdated(cached) : false;
             StatsBadge.update(cardElem, owners, wants, false, isManuallyUpdated);
-            
-            const progress = this.currentBatchProgress.total > 0 
-                ? `[${this.currentBatchProgress.current}/${this.currentBatchProgress.total}]`
-                : '';
-            Logger.important(`${progress} Card ${cardId}: 👥${owners} ⭐${wants}`);
-        } catch (err) {
-            Logger.error('Error processing card', cardId, err);
+
+            Logger.important(`✅ Card ${cardId}: 👥${owners} ⭐${wants}`);
+
+        } catch (error) {
+            Logger.error(`Error processing card ${cardId}:`, error);
+
+            // Update with error state
             if (document.body.contains(cardElem)) {
                 StatsBadge.update(cardElem, -1, -1);
             }
+
             Cache.set(cardId, -1, -1);
+
         } finally {
             Cache.pendingFetches.delete(cardId);
         }
     }
 
-    static async priorityUpdateCard(cardElem, cardId) {
+    /**
+     * Priority update for manual click
+     */
+    static async priorityUpdateCard(cardElem, cardIdRaw) {
         if (!ExtensionState.isEnabled()) {
-            Logger.important('Extension is disabled');
+            Logger.important('Extension disabled');
             return;
         }
 
-        // Обработка маркет-лотов при ручном обновлении
-        if (cardId.startsWith('market:')) {
-            const lotId = cardId.replace('market:', '');
-            
-            if (this.marketCardIdCache.has(lotId)) {
-                cardId = this.marketCardIdCache.get(lotId);
-            } else {
-                const realCardId = await Utils.getMarketCardId(lotId);
-                if (!realCardId) {
-                    Logger.warn(`Failed to get card ID for lot ${lotId}`);
-                    return;
-                }
-                this.marketCardIdCache.set(lotId, realCardId);
-                cardId = realCardId;
-            }
+        // Resolve card ID
+        const cardId = await CardIdResolver_Instance.resolve(cardIdRaw);
+        if (!cardId) {
+            Logger.error(`Failed to resolve card ID: ${cardIdRaw}`);
+            return;
         }
 
-        // Обработка заявок (requests) при ручном обновлении
-        if (cardId.startsWith('request:')) {
-            const requestId = cardId.replace('request:', '');
-            
-            if (this.marketCardIdCache.has(requestId)) {
-                cardId = this.marketCardIdCache.get(requestId);
-            } else {
-                const realCardId = await Utils.getRequestCardId(requestId);
-                if (!realCardId) {
-                    Logger.warn(`Failed to get card ID for request ${requestId}`);
-                    return;
-                }
-                this.marketCardIdCache.set(requestId, realCardId);
-                cardId = realCardId;
-            }
-        }
+        Logger.important(`🎯 Manual update (PRIORITY): Card ${cardId}`);
 
-        Logger.important(`🎯 Manual update (PRIORITY - IGNORING RATE LIMIT): Card ${cardId}`);
-
+        // Show loading state
         const badge = cardElem.querySelector('.mbuf_card_overlay');
         if (badge) {
             StatsBadge.render(badge, '⌛', '⌛', false, true);
         }
 
         try {
+            // Fetch with priority (skip rate limit)
             const [owners, wants] = await Promise.all([
                 OwnersCounter.count(cardId, true, true),
                 WantsCounter.count(cardId, true, true)
             ]);
 
+            // Save with manual update flag
             Cache.set(cardId, owners, wants, true);
-            this.expiredCards.delete(cardId);
 
+            // Update badge
             StatsBadge.update(cardElem, owners, wants, false, true);
-            Logger.important(`✨ Card ${cardId} updated (PRIORITY): 👥${owners} ⭐${wants}`);
-        } catch (err) {
-            Logger.error('Priority update error', cardId, err);
+            
+            Logger.important(`✨ Card ${cardId} updated: 👥${owners} ⭐${wants}`);
+
+        } catch (error) {
+            Logger.error(`Priority update error for ${cardId}:`, error);
             StatsBadge.update(cardElem, -1, -1);
             Cache.set(cardId, -1, -1, true);
         }
     }
 
+    /**
+     * Quick refresh - show cached data for unprocessed cards
+     */
     static async quickRefresh() {
         if (!ExtensionState.isEnabled()) return;
-        
-        // Проверяем фильтр страниц
         if (!PageFilter.isCurrentPageEnabled()) return;
 
-        const nodes = CONFIG.CARD_SELECTORS.flatMap(sel => {
-            try {
-                return Array.from(document.querySelectorAll(sel));
-            } catch (e) {
-                return [];
-            }
-        });
+        const cards = DOMUtils.queryAllCards();
+        let refreshed = 0;
 
-        for (const cardElem of nodes) {
+        for (const cardElem of cards) {
             if (cardElem.classList.contains('mb_processed')) continue;
 
-            let cardId = Utils.getCardId(cardElem);
+            let cardId = DOMUtils.getCardId(cardElem);
             if (!cardId) continue;
 
-            // Обработка маркет-лотов
-            if (cardId.startsWith('market:')) {
-                const lotId = cardId.replace('market:', '');
-                if (this.marketCardIdCache.has(lotId)) {
-                    cardId = this.marketCardIdCache.get(lotId);
-                } else {
-                    continue;
-                }
-            }
-
-            // Обработка заявок (requests)
-            if (cardId.startsWith('request:')) {
-                const requestId = cardId.replace('request:', '');
-                if (this.marketCardIdCache.has(requestId)) {
-                    cardId = this.marketCardIdCache.get(requestId);
-                } else {
-                    continue;
-                }
-            }
+            // Only use cached IDs for special cards
+            cardId = await CardIdResolver_Instance.resolve(cardId);
+            if (!cardId) continue;
 
             const cached = Cache.get(cardId);
             if (cached) {
                 const isExpired = Cache.isExpired(cached);
                 const isManuallyUpdated = Cache.isRecentlyManuallyUpdated(cached);
+                
                 StatsBadge.update(cardElem, cached.owners, cached.wants, isExpired, isManuallyUpdated);
+                
                 cardElem.classList.add('mb_processed');
                 cardElem.setAttribute('data-mb-processed', 'true');
+                
+                refreshed++;
             }
         }
+
+        if (refreshed > 0) {
+            Logger.info(`Quick refresh: ${refreshed} cards updated from cache`);
+        }
+    }
+
+    /**
+     * Cancel current batch
+     */
+    static cancelCurrentBatch() {
+        this.batchProcessor.cancel();
+    }
+
+    /**
+     * Get current progress
+     */
+    static getCurrentProgress() {
+        return this.batchProcessor.getProgress();
+    }
+
+    /**
+     * Clear all processed marks
+     */
+    static clearProcessedMarks() {
+        document.querySelectorAll('.mb_processed').forEach(el => {
+            el.classList.remove('mb_processed');
+            el.removeAttribute('data-mb-processed');
+        });
+        
+        Logger.info('Cleared all processed marks');
+    }
+
+    /**
+     * Get statistics
+     */
+    static getStats() {
+        return {
+            processedInSession: this.processedInSession.size,
+            currentProgress: this.getCurrentProgress(),
+            isProcessing: this.isProcessing,
+            queueSize: this.processingQueue.length
+        };
     }
 }

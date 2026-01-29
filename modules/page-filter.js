@@ -1,4 +1,4 @@
-// Page Filter Manager - контролирует на каких страницах работает расширение
+// Page Filter Manager with optimized patterns
 import { CONFIG } from './config.js';
 import { Logger } from './logger.js';
 import { storageGet, storageSet } from './storage.js';
@@ -10,7 +10,6 @@ export class PageFilter {
         try {
             const stored = await storageGet(CONFIG.PAGE_FILTERS_KEY, null);
             if (stored && typeof stored === 'object') {
-                // Объединяем с дефолтными настройками (на случай добавления новых страниц)
                 this.filters = { ...CONFIG.DEFAULT_PAGE_FILTERS, ...stored };
             } else {
                 this.filters = { ...CONFIG.DEFAULT_PAGE_FILTERS };
@@ -48,62 +47,13 @@ export class PageFilter {
     static getCurrentPageType() {
         const path = location.pathname;
         
-        // /cards/pack - открытие паков
-        if (path.includes('/cards/pack')) {
-            return 'packOpening';
+        // Use precompiled patterns from CONFIG
+        for (const [type, pattern] of Object.entries(CONFIG.PAGE_PATTERNS)) {
+            if (pattern.test(path)) {
+                return type;
+            }
         }
         
-        // /market/requests/create - создание заявки
-        if (path.includes('/market/requests/create')) {
-            return 'marketRequestCreate';
-        }
-        
-        // /market/requests - страница заявок
-        if (path === '/market/requests' || path.startsWith('/market/requests?')) {
-            return 'marketRequests';
-        }
-        
-        // /market/[id] - страница конкретного лота
-        if (/^\/market\/\d+/.test(path)) {
-            return 'marketLotPage';
-        }
-        
-        // /market - основная страница маркета
-        if (path === '/market' || path.startsWith('/market?')) {
-            return 'marketLots';
-        }
-        
-        // /users/[id]/cards - карты пользователя
-        if (/^\/users\/\d+\/cards/.test(path)) {
-            return 'userCards';
-        }
-        
-        // /users/[id] - витрина пользователя
-        if (/^\/users\/\d+$/.test(path) || /^\/users\/\d+\/showcase/.test(path)) {
-            return 'userShowcase';
-        }
-        
-        // /trades/offers/[id] - создание обмена
-        if (/^\/trades\/offers\/\d+/.test(path)) {
-            return 'tradeCreatePages';
-        }
-        
-        // /trades/[id] - страница обмена
-        if (/^\/trades\/\d+/.test(path)) {
-            return 'tradePages';
-        }
-        
-        // /decks/[id] - страница колоды
-        if (/^\/decks\/\d+/.test(path)) {
-            return 'deckPages';
-        }
-        
-        // /cards/[id] - страница карты
-        if (/^\/cards\/\d+/.test(path)) {
-            return 'cardShowPage';
-        }
-        
-        // Остальное
         return 'other';
     }
 
@@ -111,7 +61,7 @@ export class PageFilter {
         const pageType = this.getCurrentPageType();
         const enabled = this.filters[pageType];
         
-        Logger.info(`Current page: ${pageType}, enabled: ${enabled}`);
+        Logger.debug(`Page: ${pageType}, enabled: ${enabled}`);
         return enabled;
     }
 
@@ -120,15 +70,15 @@ export class PageFilter {
             packOpening: '🎴 Открытие паков',
             marketLots: '🏪 Маркет (главная)',
             marketLotPage: '📦 Страница лота',
-            marketRequests: '📋 Заявки на маркете',
+            marketRequests: '📋 Заявки',
             marketRequestCreate: '✍️ Создание заявки',
             userCards: '👤 Карты пользователя',
-            userShowcase: '🏆 Витрина пользователя',
+            userShowcase: '🏆 Витрина',
             tradeCreatePages: '✨ Создание обмена',
-            tradePages: '🔄 Страницы обмена',
-            deckPages: '📚 Страницы колод',
+            tradePages: '🔄 Обмены',
+            deckPages: '📚 Колоды',
             cardShowPage: '🃏 Страница карты',
-            other: '🌐 Остальные страницы'
+            other: '🌐 Остальное'
         };
         return labels[pageType] || pageType;
     }

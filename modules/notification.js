@@ -1,4 +1,4 @@
-// Notification Manager
+// Notification Manager (unchanged but with better cleanup)
 import { Logger } from './logger.js';
 
 export class NotificationManager {
@@ -81,7 +81,7 @@ export class NotificationManager {
             }
         }, 1000);
 
-        Logger.info(`⏳ Rate limit notification: ${seconds}s countdown started`);
+        Logger.info(`⏳ Rate limit notification: ${seconds}s countdown`);
     }
 
     static show429Error(seconds, attempt, maxAttempts) {
@@ -145,7 +145,7 @@ export class NotificationManager {
             this.hideNotification();
         }, 5000);
 
-        Logger.info('🚫 429 Error notification shown, auto-hide in 5s');
+        Logger.info('🚫 429 Error notification shown');
     }
 
     static hideNotification() {
@@ -171,16 +171,13 @@ export class NotificationManager {
             
             this.currentNotification = null;
         }
-
-        Logger.info('🔕 Notification hidden');
-    }
-
-    static hideRateLimitWarning() {
-        this.hideNotification();
     }
 
     static initStyles() {
+        if (document.getElementById('mbuf-notification-styles')) return;
+        
         const style = document.createElement('style');
+        style.id = 'mbuf-notification-styles';
         style.textContent = `
             @keyframes slideDown {
                 from {

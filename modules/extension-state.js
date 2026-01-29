@@ -10,7 +10,7 @@ export class ExtensionState {
         try {
             const enabled = await storageGet(CONFIG.ENABLED_KEY, true);
             this.enabled = enabled;
-            Logger.important(`Extension is ${this.enabled ? 'ENABLED ✅' : 'DISABLED ❌'}`);
+            Logger.important(`Extension ${this.enabled ? 'ENABLED ✅' : 'DISABLED ❌'}`);
             return this.enabled;
         } catch (e) {
             Logger.warn('ExtensionState load error:', e);
@@ -25,7 +25,6 @@ export class ExtensionState {
         Logger.important(`Extension ${enabled ? 'ENABLED ✅' : 'DISABLED ❌'}`);
         
         if (!enabled) {
-            // CardProcessor будет импортирован в main.js
             const { CardProcessor } = await import('./card-processor.js');
             CardProcessor.cancelCurrentBatch();
             document.querySelectorAll('.mbuf_card_overlay').forEach(badge => badge.remove());

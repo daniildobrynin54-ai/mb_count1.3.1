@@ -1,24 +1,26 @@
-// Background service worker для расширения
-// Минимальный фоновый скрипт для Manifest V3
+// Background service worker - Optimized v3.0
+console.log('[MBUF] Background service worker starting...');
 
 chrome.runtime.onInstalled.addListener((details) => {
     if (details.reason === 'install') {
-        console.log('Mangabuff Card Stats установлен');
-        
-        // Открываем приветственную страницу при первой установке
+        console.log('[MBUF] Extension installed');
         chrome.tabs.create({
             url: 'https://mangabuff.ru'
         });
     } else if (details.reason === 'update') {
-        console.log('Mangabuff Card Stats обновлён до версии', chrome.runtime.getManifest().version);
+        const version = chrome.runtime.getManifest().version;
+        console.log(`[MBUF] Extension updated to v${version}`);
+        
+        // Show update notification
+        if (details.previousVersion !== version) {
+            console.log(`[MBUF] Upgraded from v${details.previousVersion} to v${version}`);
+        }
     }
 });
 
-// Слушаем клики по иконке расширения (опционально)
+// Optional: Handle extension icon clicks
 chrome.action.onClicked.addListener((tab) => {
-    // Если нужно, можно добавить дополнительную логику при клике на иконку
-    console.log('Extension icon clicked on tab:', tab.id);
+    console.log('[MBUF] Extension icon clicked on tab:', tab.id);
 });
 
-// Логирование для отладки
-console.log('Mangabuff Card Stats background service worker запущен');
+console.log('[MBUF] Background service worker initialized (v3.0)');

@@ -1,4 +1,4 @@
-// Rate Limit Tracker
+// Rate Limit Tracker with optimizations
 import { CONFIG } from './config.js';
 import { Logger } from './logger.js';
 import { storageGet, storageSet } from './storage.js';
@@ -6,7 +6,6 @@ import { Utils } from './utils.js';
 import { NotificationManager } from './notification.js';
 
 export class RateLimitTracker {
-    static STORAGE_KEY = 'mbuf_rate_limit_requests';
     static requests = [];
     static initialized = false;
 
@@ -14,12 +13,12 @@ export class RateLimitTracker {
         if (this.initialized) return;
         
         try {
-            const stored = await storageGet(this.STORAGE_KEY, []);
+            const stored = await storageGet(CONFIG.RATE_LIMIT_KEY, []);
             this.requests = Array.isArray(stored) ? stored : [];
             this.cleanup();
             await this.persist();
             this.initialized = true;
-            Logger.info(`RateLimitTracker: ${this.requests.length} requests in history`);
+            Logger.info(`RateLimitTracker initialized: ${this.requests.length} requests in history`);
         } catch (e) {
             Logger.warn('RateLimitTracker init error:', e);
             this.requests = [];
@@ -42,7 +41,7 @@ export class RateLimitTracker {
 
     static async persist() {
         try {
-            await storageSet(this.STORAGE_KEY, this.requests);
+            await storageSet(CONFIG.RATE_LIMIT_KEY, this.requests);
         } catch (e) {
             Logger.warn('RateLimitTracker persist error:', e);
         }
@@ -70,7 +69,7 @@ export class RateLimitTracker {
             const waitTime = oldest + CONFIG.RATE_LIMIT_WINDOW - Date.now() + 1000;
             const waitSeconds = Math.ceil(waitTime / 1000);
             
-            Logger.important(`Rate limit: ${this.getRequestsInWindow()}/${CONFIG.MAX_REQUESTS_PER_MINUTE} requests, waiting ${waitSeconds}s...`);
+            Logger.important(`⏳ Rate limit: ${this.getRequestsInWindow()}/${CONFIG.MAX_REQUESTS_PER_MINUTE}, waiting ${waitSeconds}s`);
             
             NotificationManager.showRateLimitWarning(waitSeconds);
             
@@ -94,7 +93,7 @@ export class RateLimitTracker {
     }
 
     static async forceReset() {
-        Logger.important('Force resetting rate limit tracker');
+        Logger.important('🔄 Force resetting rate limit tracker');
         this.requests = [];
         await this.persist();
     }
