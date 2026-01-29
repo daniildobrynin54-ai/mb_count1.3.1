@@ -35,11 +35,28 @@ export const CONFIG = {
     WANTS_PER_PAGE: 60,
     CACHE_KEY: 'mbuf_cache_v3',
     ENABLED_KEY: 'mbuf_enabled',
+    PAGE_FILTERS_KEY: 'mbuf_page_filters',
     MAX_REQUESTS_PER_MINUTE: 70,
     RATE_LIMIT_WINDOW: 60000,
     OWNERS_APPROXIMATE_THRESHOLD: 11,
     WANTS_APPROXIMATE_THRESHOLD: 5,
     OWNERS_LAST_PAGE_ESTIMATE: 18,
     WANTS_LAST_PAGE_ESTIMATE: 30,
-    DEBUG: false
+    DEBUG: false,
+    
+    // Настройки страниц по умолчанию (все включены)
+    DEFAULT_PAGE_FILTERS: {
+        packOpening: true,          // /cards/pack
+        marketLots: true,           // /market (основная страница)
+        marketLotPage: true,        // /market/[id] (страница лота)
+        marketRequests: true,       // /market/requests (список заявок)
+        marketRequestCreate: true,  // /market/requests/create
+        userCards: true,            // /users/[id]/cards
+        userShowcase: true,         // /users/[id] (витрина)
+        tradeCreatePages: true,     // /trades/offers/[id] (создание обмена)
+        tradePages: true,           // /trades/[id]
+        deckPages: true,            // /decks/[id]
+        cardShowPage: true,         // /cards/[id]
+        other: true                 // остальные страницы
+    }
 };

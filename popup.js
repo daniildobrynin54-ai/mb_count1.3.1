@@ -9,6 +9,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const toggleSwitch = document.getElementById('toggleSwitch');
     const toggleIcon = document.getElementById('toggleIcon');
     const statusBadge = document.getElementById('statusBadge');
+    const pageFiltersContainer = document.getElementById('pageFiltersContainer');
     const refreshBtn = document.getElementById('refreshBtn');
     const exportBtn = document.getElementById('exportBtn');
     const importBtn = document.getElementById('importBtn');
@@ -18,6 +19,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const messageDiv = document.getElementById('message');
 
     let currentEnabled = true;
+    let currentPageType = null;
 
     // Получаем активную вкладку
     async function getCurrentTab() {
@@ -68,6 +70,92 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
+    // Рендерим фильтры страниц
+    function renderPageFilters(filters, currentPageType) {
+        if (!filters) {
+            pageFiltersContainer.innerHTML = '<div style="text-align: center; padding: 10px; opacity: 0.7;">Недоступно</div>';
+            return;
+        }
+
+        const pageTypeLabels = {
+            packOpening: '🎴 Открытие паков',
+            marketLots: '🏪 Маркет (главная)',
+            marketLotPage: '📦 Страница лота',
+            marketRequests: '📋 Заявки',
+            marketRequestCreate: '✍️ Создание заявки',
+            userCards: '👤 Карты пользователя',
+            userShowcase: '🏆 Витрина',
+            tradeCreatePages: '✨ Создание обмена',
+            tradePages: '🔄 Обмены',
+            deckPages: '📚 Колоды',
+            cardShowPage: '🃏 Страница карты',
+            other: '🌐 Остальное'
+        };
+
+        pageFiltersContainer.innerHTML = '';
+
+        for (const [key, label] of Object.entries(pageTypeLabels)) {
+            const isActive = filters[key];
+            const isCurrent = key === currentPageType;
+
+            const filterItem = document.createElement('div');
+            filterItem.className = 'filter-item';
+            
+            const labelDiv = document.createElement('div');
+            labelDiv.className = 'filter-label';
+            labelDiv.innerHTML = `
+                <span>${label}</span>
+                ${isCurrent ? '<span class="current-page-badge">текущая</span>' : ''}
+            `;
+
+            const toggleDiv = document.createElement('div');
+            toggleDiv.className = `filter-toggle ${isActive ? 'active' : ''}`;
+            toggleDiv.innerHTML = '<div class="filter-slider"></div>';
+            
+            toggleDiv.addEventListener('click', async () => {
+                const newState = !isActive;
+                
+                // Обновляем UI сразу для отзывчивости
+                if (newState) {
+                    toggleDiv.classList.add('active');
+                } else {
+                    toggleDiv.classList.remove('active');
+                }
+
+                // Отправляем изменение
+                const response = await sendMessage('setPageFilter', { 
+                    filterName: key, 
+                    enabled: newState 
+                });
+
+                if (response && response.success) {
+                    filters[key] = newState;
+                    showMessage(
+                        `${label}: ${newState ? 'включено' : 'выключено'}`,
+                        'info'
+                    );
+                    
+                    // Если изменили фильтр текущей страницы, обновляем статистику
+                    if (isCurrent) {
+                        setTimeout(loadStats, 500);
+                    }
+                } else {
+                    // Откатываем изменения при ошибке
+                    if (newState) {
+                        toggleDiv.classList.remove('active');
+                    } else {
+                        toggleDiv.classList.add('active');
+                    }
+                    showMessage('Ошибка изменения фильтра', 'info');
+                }
+            });
+
+            filterItem.appendChild(labelDiv);
+            filterItem.appendChild(toggleDiv);
+            pageFiltersContainer.appendChild(filterItem);
+        }
+    }
+
     // Toggle Switch Handler
     toggleSwitch.addEventListener('click', async () => {
         const newState = !currentEnabled;
@@ -94,6 +182,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 </div>
             `;
             rateLimitBox.style.display = 'none';
+            pageFiltersContainer.innerHTML = '<div style="text-align: center; padding: 10px; opacity: 0.7;">Недоступно</div>';
             return;
         }
 
@@ -102,6 +191,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (stats) {
             // Обновляем состояние toggle
             updateToggleUI(stats.enabled);
+            currentPageType = stats.currentPageType;
+
+            // Обновляем статистику
+            const pageStatusText = stats.currentPageEnabled 
+                ? '<span style="color: #4CAF50;">✓ Активна</span>' 
+                : '<span style="color: #FF6B6B;">✗ Отключена</span>';
 
             statsDiv.innerHTML = `
                 <div class="stat-item">
@@ -112,7 +207,16 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <span class="stat-label">Устаревших</span>
                     <span class="stat-value">${stats.expired}</span>
                 </div>
+                <div class="stat-item" style="font-size: 12px;">
+                    <span class="stat-label">Текущая страница</span>
+                    <span>${pageStatusText}</span>
+                </div>
             `;
+
+            // Обновляем фильтры страниц
+            if (stats.pageFilters) {
+                renderPageFilters(stats.pageFilters, stats.currentPageType);
+            }
 
             // Обновляем Rate Limit информацию
             if (stats.rateLimitInfo) {
@@ -140,6 +244,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 </div>
             `;
             rateLimitBox.style.display = 'none';
+            pageFiltersContainer.innerHTML = '<div style="text-align: center; padding: 10px; opacity: 0.7;">Недоступно</div>';
         }
     }
 

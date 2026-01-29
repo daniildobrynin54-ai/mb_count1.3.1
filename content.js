@@ -6,24 +6,27 @@
     const { Logger } = await import(chrome.runtime.getURL('modules/logger.js'));
     const { NotificationManager } = await import(chrome.runtime.getURL('modules/notification.js'));
     const { ExtensionState } = await import(chrome.runtime.getURL('modules/extension-state.js'));
+    const { PageFilter } = await import(chrome.runtime.getURL('modules/page-filter.js'));
     const { RateLimitTracker } = await import(chrome.runtime.getURL('modules/rate-limit.js'));
     const { Cache } = await import(chrome.runtime.getURL('modules/cache.js'));
     const { DOMObserver } = await import(chrome.runtime.getURL('modules/dom-observer.js'));
     const { MessageHandler } = await import(chrome.runtime.getURL('modules/message-handler.js'));
     const { CardProcessor } = await import(chrome.runtime.getURL('modules/card-processor.js'));
 
-    Logger.important('🚀 Mangabuff Card Stats v2.5 (Modular)');
-    Logger.important('⚙️ Refactored into separate modules');
+    Logger.important('🚀 Mangabuff Card Stats v2.5 (Modular + Page Filters)');
+    Logger.important('⚙️ Refactored into separate modules with page filtering');
 
     // Initialize notification styles
     NotificationManager.initStyles();
 
-    // Load extension state and cache
+    // Load extension state, page filters and cache
     await ExtensionState.load();
+    await PageFilter.load();
     await RateLimitTracker.init();
     await Cache.load();
 
     Logger.important(`💾 Cache: ${Object.keys(Cache.data).length} cards in chrome.storage.local`);
+    Logger.important(`🔧 Page filters: ${PageFilter.getCurrentPageType()} - ${PageFilter.isCurrentPageEnabled() ? 'ENABLED' : 'DISABLED'}`);
 
     // Initialize message handler
     MessageHandler.init();
@@ -66,6 +69,7 @@
         Logger.important('🎴 Pack opening page detected - enabling auto-refresh');
         setInterval(() => {
             if (!ExtensionState.isEnabled()) return;
+            if (!PageFilter.isCurrentPageEnabled()) return;
             
             document.querySelectorAll('.mb_processed').forEach(el => {
                 el.classList.remove('mb_processed');

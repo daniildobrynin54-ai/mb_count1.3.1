@@ -6,6 +6,7 @@ import { Cache } from './cache.js';
 import { StatsBadge } from './stats-badge.js';
 import { OwnersCounter, WantsCounter } from './counters.js';
 import { ExtensionState } from './extension-state.js';
+import { PageFilter } from './page-filter.js';
 
 export class CardProcessor {
     static expiredCards = new Set();
@@ -18,6 +19,12 @@ export class CardProcessor {
     static async processAll() {
         if (!ExtensionState.isEnabled()) {
             Logger.info('Extension is disabled, skipping processing');
+            return;
+        }
+
+        // Проверяем, включена ли текущая страница
+        if (!PageFilter.isCurrentPageEnabled()) {
+            Logger.important(`⛔ Current page type (${PageFilter.getCurrentPageType()}) is disabled in filters`);
             return;
         }
 
@@ -294,6 +301,9 @@ export class CardProcessor {
 
     static async quickRefresh() {
         if (!ExtensionState.isEnabled()) return;
+        
+        // Проверяем фильтр страниц
+        if (!PageFilter.isCurrentPageEnabled()) return;
 
         const nodes = CONFIG.CARD_SELECTORS.flatMap(sel => {
             try {
