@@ -21,13 +21,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     let currentEnabled = true;
     let currentPageType = null;
 
-    // Получаем активную вкладку
     async function getCurrentTab() {
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         return tab;
     }
 
-    // Отправляем сообщение на страницу
     async function sendMessage(action, data = {}) {
         const tab = await getCurrentTab();
         if (!tab || !tab.id) return null;
@@ -44,7 +42,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    // Показываем сообщение
     function showMessage(text, type = 'success') {
         const className = type === 'success' ? 'success-message' : 'info-message';
         messageDiv.innerHTML = `<div class="${className}">${text}</div>`;
@@ -53,7 +50,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }, 3000);
     }
 
-    // Обновляем UI toggle переключателя
     function updateToggleUI(enabled) {
         currentEnabled = enabled;
         
@@ -70,7 +66,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    // Рендерим фильтры страниц
     function renderPageFilters(filters, currentPageType) {
         if (!filters) {
             pageFiltersContainer.innerHTML = '<div style="text-align: center; padding: 10px; opacity: 0.7;">Недоступно</div>';
@@ -115,14 +110,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             toggleDiv.addEventListener('click', async () => {
                 const newState = !isActive;
                 
-                // Обновляем UI сразу для отзывчивости
                 if (newState) {
                     toggleDiv.classList.add('active');
                 } else {
                     toggleDiv.classList.remove('active');
                 }
 
-                // Отправляем изменение
                 const response = await sendMessage('setPageFilter', { 
                     filterName: key, 
                     enabled: newState 
@@ -135,12 +128,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                         'info'
                     );
                     
-                    // Если изменили фильтр текущей страницы, обновляем статистику
                     if (isCurrent) {
                         setTimeout(loadStats, 500);
                     }
                 } else {
-                    // Откатываем изменения при ошибке
                     if (newState) {
                         toggleDiv.classList.remove('active');
                     } else {
@@ -156,7 +147,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    // Toggle Switch Handler
     toggleSwitch.addEventListener('click', async () => {
         const newState = !currentEnabled;
         updateToggleUI(newState);
@@ -166,13 +156,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             showMessage(newState ? '✅ Расширение включено' : '⸻ Расширение выключено', 'info');
             await loadStats();
         } else {
-            // Откатываем изменения если не удалось
             updateToggleUI(!newState);
             showMessage('❌ Ошибка изменения состояния', 'info');
         }
     });
 
-    // Загружаем статистику
     async function loadStats() {
         const tab = await getCurrentTab();
         if (!tab || !tab.url?.includes('mangabuff.ru')) {
@@ -189,11 +177,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         const stats = await sendMessage('getStats');
         
         if (stats) {
-            // Обновляем состояние toggle
             updateToggleUI(stats.enabled);
             currentPageType = stats.currentPageType;
 
-            // Обновляем статистику
             const pageStatusText = stats.currentPageEnabled 
                 ? '<span style="color: #4CAF50;">✓ Активна</span>' 
                 : '<span style="color: #FF6B6B;">✗ Отключена</span>';
@@ -213,12 +199,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 </div>
             `;
 
-            // Обновляем фильтры страниц
             if (stats.pageFilters) {
                 renderPageFilters(stats.pageFilters, stats.currentPageType);
             }
 
-            // Обновляем Rate Limit информацию
             if (stats.rateLimitInfo) {
                 const { current, max, remaining, resetIn } = stats.rateLimitInfo;
                 const percentage = (current / max) * 100;
@@ -229,7 +213,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 rateLimitRemaining.textContent = `Осталось: ${remaining}`;
                 rateLimitReset.textContent = `Сброс через: ${resetIn}с`;
 
-                // Цветовая индикация
                 rateLimitFill.classList.remove('warning', 'danger');
                 if (percentage >= 90) {
                     rateLimitFill.classList.add('danger');
@@ -248,7 +231,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    // Обновить карты
     refreshBtn.addEventListener('click', async () => {
         if (!currentEnabled) {
             showMessage('⚠️ Включите расширение для обновления', 'info');
@@ -268,7 +250,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }, 1000);
     });
 
-    // Экспорт кэша
     exportBtn.addEventListener('click', async () => {
         const response = await sendMessage('exportCache');
         if (response && response.data) {
@@ -286,7 +267,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
-    // Импорт кэша
     importBtn.addEventListener('click', () => {
         fileInput.click();
     });
@@ -309,7 +289,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         fileInput.value = '';
     });
 
-    // Очистить кэш
     clearBtn.addEventListener('click', async () => {
         if (!confirm('Очистить весь кэш?')) return;
         
@@ -326,7 +305,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }, 1000);
     });
 
-    // Сбросить Rate Limit
     clearRateLimitBtn.addEventListener('click', async () => {
         if (!confirm('Сбросить счётчик rate limit? Используйте только в экстренных случаях!')) return;
         
@@ -343,9 +321,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }, 1000);
     });
 
-    // Загружаем статистику при открытии
     await loadStats();
-    
-    // Обновляем статистику каждые 2 секунды
     setInterval(loadStats, 2000);
 });

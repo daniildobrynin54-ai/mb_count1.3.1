@@ -72,20 +72,18 @@
         }
     }, 10000); // Log every 10 seconds instead of 5
 
-    // Auto-refresh for pack opening pages
+    // Auto-refresh for pack opening pages - ИСПРАВЛЕНО
     if (location.pathname.includes('/cards/pack')) {
-        Logger.important('🎴 Pack opening page - enabling auto-refresh');
+        Logger.important('🎴 Pack opening page - enabling smart auto-refresh');
         
         setInterval(() => {
             if (!ExtensionState.isEnabled()) return;
             if (!PageFilter.isCurrentPageEnabled()) return;
             
-            // Quick refresh from cache
-            CardProcessor.quickRefresh();
-            
-            // Full processing for new cards
-            CardProcessor.processAll();
-        }, 2000);
+            // Очищаем флаги обработки и перепроверяем все карты
+            // Это позволяет обрабатывать карты с новыми ID на тех же позициях
+            CardProcessor.clearProcessedMarksAndReprocess();
+        }, 1000); // Проверка каждую секунду для быстрого отклика
     }
 
     // Memory management - periodic cleanup

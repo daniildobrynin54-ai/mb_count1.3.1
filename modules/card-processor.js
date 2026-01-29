@@ -73,6 +73,7 @@ export class CardProcessor {
     static processedInSession = new Set();
     static processingQueue = [];
     static isProcessing = false;
+    static cardIdMap = new Map(); // Карта элемент -> ID карты для отслеживания изменений
 
     /**
      * Main processing entry point
@@ -143,6 +144,21 @@ export class CardProcessor {
         // Resolve special card IDs (market/request)
         cardId = await CardIdResolver_Instance.resolve(cardId);
         if (!cardId) return null;
+
+        // Проверяем, изменился ли ID карты (важно для страницы паков)
+        const oldCardId = this.cardIdMap.get(cardElem);
+        if (oldCardId && oldCardId !== cardId) {
+            Logger.info(`🔄 Card ID changed: ${oldCardId} → ${cardId}`);
+            // Сбрасываем флаг обработки для этой карты
+            cardElem.classList.remove('mb_processed');
+            cardElem.removeAttribute('data-mb-processed');
+            // Удаляем старый бейдж
+            const oldBadge = cardElem.querySelector('.mbuf_card_overlay');
+            if (oldBadge) oldBadge.remove();
+        }
+
+        // Сохраняем текущий ID
+        this.cardIdMap.set(cardElem, cardId);
 
         const cached = Cache.get(cardId);
 
@@ -399,6 +415,49 @@ export class CardProcessor {
     }
 
     /**
+     * НОВЫЙ МЕТОД: Очистка флагов обработки и повторная обработка
+     * Используется на странице паков, где карты меняются на тех же позициях
+     */
+    static async clearProcessedMarksAndReprocess() {
+        const cards = DOMUtils.queryAllCards();
+        let changedCards = 0;
+
+        // Проверяем каждую карту на изменение ID
+        for (const cardElem of cards) {
+            let cardId = DOMUtils.getCardId(cardElem);
+            if (!cardId) continue;
+
+            // Resolve special card IDs
+            cardId = await CardIdResolver_Instance.resolve(cardId);
+            if (!cardId) continue;
+
+            const oldCardId = this.cardIdMap.get(cardElem);
+            
+            // Если ID изменился - сбрасываем флаг обработки
+            if (oldCardId && oldCardId !== cardId) {
+                cardElem.classList.remove('mb_processed');
+                cardElem.removeAttribute('data-mb-processed');
+                
+                // Удаляем старый бейдж
+                const oldBadge = cardElem.querySelector('.mbuf_card_overlay');
+                if (oldBadge) oldBadge.remove();
+                
+                changedCards++;
+                Logger.info(`🔄 Card changed: ${oldCardId} → ${cardId}`);
+            }
+
+            // Обновляем карту ID
+            this.cardIdMap.set(cardElem, cardId);
+        }
+
+        // Если есть изменившиеся карты - обрабатываем все
+        if (changedCards > 0) {
+            Logger.important(`🔄 Detected ${changedCards} changed cards, reprocessing...`);
+            await this.processAll();
+        }
+    }
+
+    /**
      * Cancel current batch
      */
     static cancelCurrentBatch() {
@@ -421,6 +480,9 @@ export class CardProcessor {
             el.removeAttribute('data-mb-processed');
         });
         
+        // Очищаем карту ID
+        this.cardIdMap.clear();
+        
         Logger.info('Cleared all processed marks');
     }
 
@@ -432,7 +494,8 @@ export class CardProcessor {
             processedInSession: this.processedInSession.size,
             currentProgress: this.getCurrentProgress(),
             isProcessing: this.isProcessing,
-            queueSize: this.processingQueue.length
+            queueSize: this.processingQueue.length,
+            trackedCards: this.cardIdMap.size
         };
     }
 }

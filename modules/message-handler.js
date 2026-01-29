@@ -10,7 +10,7 @@ export class MessageHandler {
     static init() {
         chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             this.handleMessage(request, sender, sendResponse);
-            return true; // Keep channel open for async responses
+            return true;
         });
         
         Logger.info('Message handler initialized');
@@ -87,7 +87,6 @@ export class MessageHandler {
         const success = await PageFilter.setFilter(request.filterName, request.enabled);
         
         if (success) {
-            // Update current page if affected
             if (PageFilter.getCurrentPageType() === request.filterName) {
                 if (request.enabled) {
                     CardProcessor.processAll();

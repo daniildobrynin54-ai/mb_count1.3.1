@@ -5,9 +5,6 @@ import { Utils } from './utils.js';
 import { RateLimitTracker } from './rate-limit.js';
 import { NotificationManager } from './notification.js';
 
-/**
- * Custom HTTP Error
- */
 class HTTPError extends Error {
     constructor(message, status, type) {
         super(message);
@@ -17,17 +14,11 @@ class HTTPError extends Error {
     }
 }
 
-/**
- * HTTP Client with advanced features
- */
 export class HttpClient {
     static activeRequests = new Set();
     static requestQueue = [];
     static isProcessingQueue = false;
 
-    /**
-     * Make HTTP request with retry and rate limiting
-     */
     static async makeRequest(url, options = {}) {
         const {
             skipRateLimit = false,
@@ -36,7 +27,6 @@ export class HttpClient {
             priority = false
         } = options;
 
-        // Wait for rate limit slot if needed
         if (!skipRateLimit) {
             await RateLimitTracker.waitForSlot();
         }
@@ -46,7 +36,6 @@ export class HttpClient {
             const timeoutId = setTimeout(() => controller.abort(), timeout);
 
             try {
-                // Track request
                 if (!skipRateLimit) {
                     await RateLimitTracker.addRequest();
                 }
@@ -66,7 +55,6 @@ export class HttpClient {
                 clearTimeout(timeoutId);
                 this.activeRequests.delete(requestId);
 
-                // Handle response
                 if (response.ok) {
                     const text = await response.text();
                     return { 
@@ -76,7 +64,6 @@ export class HttpClient {
                     };
                 }
 
-                // Handle specific error codes
                 if (response.status === 429) {
                     throw new HTTPError('Rate limit exceeded', 429, ERROR_TYPES.RATE_LIMIT);
                 }
@@ -98,24 +85,18 @@ export class HttpClient {
             }
 
         } catch (error) {
-            // Handle 429 rate limit with special retry logic
             if (error.type === ERROR_TYPES.RATE_LIMIT) {
                 return this._handle429Error(url, options);
             }
 
-            // Retry on network errors
             if (error.type === ERROR_TYPES.NETWORK && options._retryCount < retries) {
                 return this._retryRequest(url, options);
             }
 
-            // Don't retry on 404 or timeout
             throw error;
         }
     }
 
-    /**
-     * Handle 429 rate limit error
-     */
     static async _handle429Error(url, options) {
         const attempt429 = (options._attempt429 || 0) + 1;
 
@@ -147,9 +128,6 @@ export class HttpClient {
         });
     }
 
-    /**
-     * Retry request with exponential backoff
-     */
     static async _retryRequest(url, options) {
         const retryCount = (options._retryCount || 0) + 1;
         const delay = Math.min(1000 * Math.pow(2, retryCount), 10000);
@@ -164,9 +142,6 @@ export class HttpClient {
         });
     }
 
-    /**
-     * Batch requests with concurrency control
-     */
     static async batchRequest(urls, options = {}) {
         const {
             concurrency = CONFIG.BATCH_SIZE,
@@ -199,7 +174,6 @@ export class HttpClient {
 
             await Promise.all(batchPromises);
 
-            // Pause between batches
             if (i + concurrency < urls.length) {
                 await Utils.sleep(CONFIG.PAUSE_BETWEEN_REQUESTS);
             }
@@ -213,24 +187,15 @@ export class HttpClient {
         };
     }
 
-    /**
-     * Cancel all active requests (not implemented in fetch, but tracked)
-     */
     static cancelAllRequests() {
         Logger.important(`Cancelling ${this.activeRequests.size} active requests`);
         this.activeRequests.clear();
     }
 
-    /**
-     * Get active request count
-     */
     static getActiveRequestCount() {
         return this.activeRequests.size;
     }
 
-    /**
-     * Parse HTML response
-     */
     static parseHTML(responseText) {
         try {
             return new DOMParser().parseFromString(responseText, 'text/html');
@@ -239,17 +204,11 @@ export class HttpClient {
         }
     }
 
-    /**
-     * Fetch and parse in one call
-     */
     static async fetchAndParse(url, options = {}) {
         const response = await this.makeRequest(url, options);
         return this.parseHTML(response.responseText);
     }
 
-    /**
-     * Get statistics
-     */
     static getStats() {
         return {
             activeRequests: this.activeRequests.size,

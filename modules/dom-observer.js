@@ -10,10 +10,8 @@ export class DOMObserver {
     static observer = null;
 
     static init() {
-        // Initial processing
         CardProcessor.processAll();
 
-        // Create mutation observer
         this.observer = new MutationObserver(
             Utils.debounce((mutations) => {
                 if (!ExtensionState.isEnabled()) return;
@@ -24,7 +22,6 @@ export class DOMObserver {
                     for (const node of mutation.addedNodes) {
                         if (node.nodeType !== 1) continue;
 
-                        // Check for modal/popup containers
                         if (node.classList?.contains('modal') ||
                             node.classList?.contains('popup') ||
                             node.classList?.contains('pack-opening') ||
@@ -34,7 +31,6 @@ export class DOMObserver {
                             break;
                         }
 
-                        // Check for card elements
                         for (const selector of CONFIG.CARD_SELECTORS) {
                             try {
                                 const matched = node.matches?.(selector) ? [node] :
@@ -52,10 +48,8 @@ export class DOMObserver {
                 }
 
                 if (foundNew) {
-                    // Quick refresh from cache
                     CardProcessor.quickRefresh();
 
-                    // Full processing after delay
                     if (this.debounceTimer) {
                         clearTimeout(this.debounceTimer);
                     }
@@ -66,7 +60,6 @@ export class DOMObserver {
             }, 200)
         );
 
-        // Start observing
         this.observer.observe(document.body, {
             childList: true,
             subtree: true,

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Mangabuff Card Stats",
-  "version": "2.0.0",
-  "description": "Оптимизированное расширение для статистики карт на Mangabuff. Улучшенная производительность, управление памятью и надёжность.",
+  "version": "2.1.0",
+  "description": "Оптимизированное расширение для статистики карт на Mangabuff. Улучшенная производительность, управление памятью и надёжность. Исправлено обновление на странице паков.",
   "permissions": [
     "storage"
   ],
@@ -18,7 +18,7 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Mangabuff Card Stats v3.0"
+    "default_title": "Mangabuff Card Stats v3.1"
   },
   "background": {
     "service_worker": "background.js",

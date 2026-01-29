@@ -11,14 +11,12 @@ chrome.runtime.onInstalled.addListener((details) => {
         const version = chrome.runtime.getManifest().version;
         console.log(`[MBUF] Extension updated to v${version}`);
         
-        // Show update notification
         if (details.previousVersion !== version) {
             console.log(`[MBUF] Upgraded from v${details.previousVersion} to v${version}`);
         }
     }
 });
 
-// Optional: Handle extension icon clicks
 chrome.action.onClicked.addListener((tab) => {
     console.log('[MBUF] Extension icon clicked on tab:', tab.id);
 });

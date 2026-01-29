@@ -42,7 +42,6 @@ export class StatsBadge {
             e.preventDefault();
             e.stopPropagation();
             
-            // ✅ Используем DOMUtils вместо Utils
             const cardId = DOMUtils.getCardId(cardElem);
             if (cardId) {
                 try {
@@ -64,7 +63,6 @@ export class StatsBadge {
     static render(badge, owners, wants, isExpired = false, isManuallyUpdated = false) {
         if (!badge) return;
 
-        // Styling based on state
         if (owners === '⌛' && isManuallyUpdated) {
             badge.style.background = 'linear-gradient(135deg, rgba(255,215,0,0.95), rgba(255,165,0,0.95))';
             badge.style.border = '2px solid rgba(255,223,0,0.8)';
